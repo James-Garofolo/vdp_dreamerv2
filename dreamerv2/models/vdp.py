@@ -176,6 +176,7 @@ class ConvTranspose2d(torch.nn.Module):
             kl = 0.5*torch.mean(self.kernel_size * softplus(self.sigma.weight) + 
                 torch.norm(self.mu.weight)**2 - self.kernel_size - self.kernel_size * torch.log(softplus(self.sigma.weight)))
         return kl
+    
 
 
 class MaxPool2d(torch.nn.Module):
@@ -229,6 +230,20 @@ class Sigmoid(torch.nn.Module):
         if self.tuple_input_flag:
             mu, sigma = mu
         mu_a = self.sigmoid(mu)
+        sigma_a = sigma * (torch.autograd.grad(torch.sum(mu_a), mu, create_graph=True, retain_graph=True)[0]**2)
+        return mu_a, sigma_a
+    
+    
+class TanH(torch.nn.Module):
+    def __init__(self, tuple_input_flag=False):
+        super(TanH, self).__init__()
+        self.tuple_input_flag = tuple_input_flag
+        self.tanh = torch.nn.Tanh()
+    
+    def forward(self, mu, sigma=torch.tensor(0., requires_grad=True)):
+        if self.tuple_input_flag:
+            mu, sigma = mu
+        mu_a = self.tanh(mu)
         sigma_a = sigma * (torch.autograd.grad(torch.sum(mu_a), mu, create_graph=True, retain_graph=True)[0]**2)
         return mu_a, sigma_a
 
@@ -336,3 +351,73 @@ class AdaptiveAvgPool2d(torch.nn.Module):
         mu_y = self.avgpool(mu)
         sigma_y = self.avgpool(sigma) + torch.var(mu)
         return mu_y, sigma_y
+
+
+
+
+class GRUCell(torch.nn.Module):
+    def __init__(self, input_size, hidden_size, bias=True, input_flag=False):
+        super(GRUCell, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.bias = bias
+
+        self.x2h = Linear(input_size, 3 * hidden_size, bias=bias, input_flag=input_flag)
+        self.h2h = Linear(hidden_size, 3 * hidden_size, bias=bias)
+        self.sigmoid = Sigmoid()
+        self.tanh = TanH()
+        self.reset_parameters()
+
+
+    def reset_parameters(self):
+        std = 1.0 / torch.sqrt(self.hidden_size)
+        for w in self.parameters():
+            w.data.uniform_(-std, std)
+
+    def forward(self, mu_x, sigma_x=torch.tensor(0., requires_grad=True), mu_hx=None, sigma_hx=None):
+        """
+        Inputs:
+            input: of shape (batch_size, input_size)
+            hx: of shape (batch_size, hidden_size)
+        Output:
+            hy: of shape (batch_size, hidden_size)
+        """
+
+        if mu_hx is None:
+            mu_hx = torch.autograd.Variable(mu_x.new_zeros(mu_x.size(0), self.hidden_size))
+            sigma_hx = torch.autograd.Variable(sigma_x.new_zeros(sigma_x.size(0), self.hidden_size))
+
+
+        mu_xt, sigma_xt = self.x2h(mu_x, sigma_x)
+        mu_ht, sigma_ht = self.h2h(mu_hx, sigma_hx)
+
+
+        mu_x_reset, mu_x_upd, mu_x_new = mu_xt.chunk(3, 1)
+        sigma_x_reset, sigma_x_upd, sigma_x_new = sigma_xt.chunk(3, 1)
+        mu_h_reset, mu_h_upd, mu_h_new = mu_ht.chunk(3, 1)
+        sigma_h_reset, sigma_h_upd, sigma_h_new = sigma_ht.chunk(3, 1)
+
+        reset_gate_mu, reset_gate_sigma = self.sigmoid(mu_x_reset + mu_h_reset, sigma_x_reset + sigma_h_reset)
+        update_gate_mu, update_gate_sigma = self.sigmoid(mu_x_upd + mu_h_upd, sigma_x_upd + sigma_h_upd)
+
+        gated_mu_h_new = reset_gate_mu * mu_h_new
+        gated_sigma_h_new = reset_gate_sigma*sigma_h_new + \
+                            reset_gate_sigma*torch.square(mu_h_new) + \
+                            sigma_h_new*torch.square(reset_gate_mu)
+            
+
+        new_gate_mu, new_gate_sigma = self.tanh(mu_x_new + gated_mu_h_new, sigma_x_new + gated_sigma_h_new)
+
+        gated_sigma_hx = update_gate_sigma*sigma_hx + \
+                        update_gate_sigma*torch.square(mu_hx) + \
+                        sigma_hx*torch.square(update_gate_mu)
+
+        double_gate_sigma = new_gate_sigma*update_gate_sigma + \
+                            new_gate_sigma*torch.square(1 - update_gate_mu) + \
+                            update_gate_sigma*torch.square(new_gate_mu)
+
+        mu_hy = update_gate_mu * mu_hx + (1 - update_gate_mu) * new_gate_mu
+
+        sigma_hy = gated_sigma_hx + double_gate_sigma
+
+        return mu_hy, sigma_hy
