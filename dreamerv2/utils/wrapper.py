@@ -38,9 +38,12 @@ class GymMinAtar(gym.Env):
             self.env.display_state(self.display_time)
 
     def close(self):
-        if self.env.visualized:
-            self.env.close_display()
-        return 0
+        try:
+            if self.env.unwrapped.visualized:
+                self.env.close_display()
+            return 0
+        except AttributeError:
+            return 0
 
 class breakoutPOMDP(gym.ObservationWrapper):
     def __init__(self, env):

@@ -27,7 +27,7 @@ class MinAtarConfig():
     batch_size: int = 50 
     seq_len: int = 50
     eval_episode: int = 4
-    eval_render: bool = True
+    eval_render: bool = False#True
     save_every: int = int(1e5)
     seed_steps: int = 4000
     model_dir: int = 'results'
