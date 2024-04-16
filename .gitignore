@@ -134,3 +134,7 @@ dmypy.json
 .__pycache__
 .dreamerv2.egg-info
 .vscode
+
+small_test.py
+test.py
+MNIST
