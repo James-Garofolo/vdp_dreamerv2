@@ -2,8 +2,12 @@ import math
 import torch
 import torch.nn.functional as F
 
+
 def softplus(a):
     return torch.log(1.+torch.exp(torch.clamp(a, min=-88, max=88)))
+
+def i_softplus(a):
+    return torch.clamp(torch.log(torch.exp(a-1)), min=-88, max=88)
 
 
 def retrieve_elements_from_indices(tensor, indices):
