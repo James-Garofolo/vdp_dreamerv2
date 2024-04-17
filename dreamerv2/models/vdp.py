@@ -1,7 +1,7 @@
 import math
 import torch
 import torch.nn.functional as F
-
+import numpy as np
 
 def softplus(a):
     return torch.log(1.+torch.exp(torch.clamp(a, min=-88, max=88)))
@@ -217,10 +217,23 @@ class GELU(torch.nn.Module):
         self.tuple_input_flag = tuple_input_flag
         self.gelu = torch.nn.GELU()
 
-    def forward(self, mu, sigma):
+    def forward(self, mu, sigma=torch.tensor(0., requires_grad=True)):
         if self.tuple_input_flag:
             mu, sigma = mu
         mu_a = self.gelu(mu)
+        sigma_a = sigma * (torch.autograd.grad(torch.sum(mu_a), mu, create_graph=True, retain_graph=True)[0]**2)
+        return mu_a, sigma_a
+    
+class ELU(torch.nn.Module):
+    def __init__(self, tuple_input_flag=False):
+        super(ELU, self).__init__()
+        self.tuple_input_flag = tuple_input_flag
+        self.elu = torch.nn.ELU()
+
+    def forward(self, mu, sigma=torch.tensor(0., requires_grad=True)):
+        if self.tuple_input_flag:
+            mu, sigma = mu
+        mu_a = self.elu(mu)
         sigma_a = sigma * (torch.autograd.grad(torch.sum(mu_a), mu, create_graph=True, retain_graph=True)[0]**2)
         return mu_a, sigma_a
     
@@ -374,7 +387,7 @@ class GRUCell(torch.nn.Module):
 
 
     def reset_parameters(self):
-        std = 1.0 / torch.sqrt(self.hidden_size)
+        std = 1.0 / np.sqrt(self.hidden_size)
         for w in self.parameters():
             w.data.uniform_(-std, std)
 

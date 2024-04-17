@@ -1,7 +1,7 @@
 import torch 
 import torch.nn as nn
 import numpy as np
-import vdp
+import dreamerv2.models.vdp as vdp
 
 class DiscreteActionModel(nn.Module):
     def __init__(
@@ -31,7 +31,7 @@ class DiscreteActionModel(nn.Module):
         self.model = self._build_model()
 
     def _build_model(self):
-        model = [vdp.Linear(self.deter_size + self.stoch_size, self.node_size)]
+        model = [vdp.Linear(self.deter_size + self.stoch_size, self.node_size, tuple_input_flag=True)]
         model += [self.act_fn(tuple_input_flag=True)]
         for i in range(1, self.layers):
             model += [vdp.Linear(self.node_size, self.node_size, tuple_input_flag=True)]
@@ -43,8 +43,8 @@ class DiscreteActionModel(nn.Module):
             raise NotImplementedError
         return nn.Sequential(*model) 
 
-    def forward(self, model_state):
-        action_dist = self.get_action_dist(model_state)
+    def forward(self, model_state, explore=False):
+        action_dist = self.get_action_dist(model_state, explore=explore)
         action = action_dist.sample()
         action = action + action_dist.probs - action_dist.probs.detach()
         return action, action_dist

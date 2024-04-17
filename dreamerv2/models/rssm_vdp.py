@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from dreamerv2.utils.rssm import RSSMUtils, RSSMContState, RSSMDiscState
-import vdp
+from dreamerv2.utils.rssm_vdp import RSSMUtils, RSSMContState, RSSMDiscState
+import dreamerv2.models.vdp as vdp
 
 class RSSM(nn.Module, RSSMUtils):
     def __init__(
@@ -12,7 +12,7 @@ class RSSM(nn.Module, RSSMUtils):
         device,
         rssm_type,
         info,
-        act_fn=nn.ELU,  
+        act_fn=vdp.ELU,  
     ):
         nn.Module.__init__(self)
         RSSMUtils.__init__(self, rssm_type=rssm_type, info=info)
@@ -41,7 +41,7 @@ class RSSM(nn.Module, RSSMUtils):
         model is supposed to take in latest deterministic state 
         and output prior over stochastic state
         """
-        temporal_prior = [vdp.Linear(self.deter_size, self.node_size)]
+        temporal_prior = [vdp.Linear(self.deter_size, self.node_size, tuple_input_flag=True)]
         temporal_prior += [self.act_fn(tuple_input_flag=True)]
         temporal_prior += [vdp.Linear(self.node_size, self.stoch_size, tuple_input_flag=True)]
         """
@@ -59,7 +59,7 @@ class RSSM(nn.Module, RSSMUtils):
         model is supposed to take in latest embedded observation and deterministic state 
         and output posterior over stochastic states
         """
-        temporal_posterior = [vdp.Linear(self.deter_size + self.embedding_size, self.node_size)]
+        temporal_posterior = [vdp.Linear(self.deter_size + self.embedding_size, self.node_size, tuple_input_flag=True)]
         temporal_posterior += [self.act_fn(tuple_input_flag=True)]
         temporal_posterior += [vdp.Linear(self.node_size, self.stoch_size, tuple_input_flag=True)]
         """
@@ -80,14 +80,14 @@ class RSSM(nn.Module, RSSMUtils):
         # rnn makes gaussian "deterministic" states
         deter_state_mu, deter_state_sigma = self.rnn(state_action_embed_mu, 
                                             state_action_embed_sigma, 
-                                            prev_rssm_state.deter[0]*nonterms,
-                                            prev_rssm_state.deter[1]*nonterms)
+                                            prev_rssm_state.deter_mu*nonterms,
+                                            prev_rssm_state.deter_sigma*nonterms)
         
         if self.rssm_type == 'discrete':
-            prior_logit,_ = self.fc_prior(deter_state_mu, deter_state_sigma)
+            prior_logit,_ = self.fc_prior((deter_state_mu, deter_state_sigma))
             stats = {'logit':prior_logit}
             prior_stoch_state = self.get_stoch_state(stats)
-            prior_rssm_state = RSSMDiscState(prior_logit, prior_stoch_state, (deter_state_mu, deter_state_sigma))
+            prior_rssm_state = RSSMDiscState(prior_logit, prior_stoch_state, deter_state_mu, deter_state_sigma)
 
         elif self.rssm_type == 'continuous':
             # no more regression, get these the bayes way
@@ -96,7 +96,7 @@ class RSSM(nn.Module, RSSMUtils):
             # needs i_softplus because get_stoch_state does softplus and I'm trying to minimize duplicate files
             stats = {'mean':prior_mean, 'std':vdp.i_softplus(prior_std)}
             prior_stoch_state, std = self.get_stoch_state(stats)
-            prior_rssm_state = RSSMContState(prior_mean, std, prior_stoch_state, (deter_state_mu, deter_state_sigma))
+            prior_rssm_state = RSSMContState(prior_mean, std, prior_stoch_state, deter_state_mu, deter_state_sigma)
         return prior_rssm_state
 
     def rollout_imagination(self, horizon:int, actor:nn.Module, prev_rssm_state):
@@ -105,7 +105,8 @@ class RSSM(nn.Module, RSSMUtils):
         action_entropy = []
         imag_log_probs = []
         for t in range(horizon):
-            action, action_dist = actor((self.get_model_state(rssm_state)).detach())
+            model_state_mu, model_state_sigma = self.get_model_state(rssm_state)
+            action, action_dist = actor((model_state_mu).detach(), (model_state_sigma).detach())
             rssm_state = self.rssm_imagine(action, rssm_state)
             next_rssm_states.append(rssm_state)
             action_entropy.append(action_dist.entropy())
@@ -118,14 +119,15 @@ class RSSM(nn.Module, RSSMUtils):
 
     def rssm_observe(self, obs_embed_mu, obs_embed_sigma, prev_action, prev_nonterm, prev_rssm_state):
         prior_rssm_state = self.rssm_imagine(prev_action, prev_rssm_state, prev_nonterm)
-        deter_state_mu, deter_state_sigma = prior_rssm_state.deter
+        deter_state_mu = prior_rssm_state.deter_mu 
+        deter_state_sigma = prior_rssm_state.deter_sigma
         mu_x = torch.cat([deter_state_mu, obs_embed_mu], dim=-1)
         sigma_x = torch.cat([deter_state_sigma, obs_embed_sigma], dim=-1)
         if self.rssm_type == 'discrete':
-            posterior_logit = self.fc_posterior(mu_x, sigma_x)
+            posterior_logit,_ = self.fc_posterior((mu_x, sigma_x))
             stats = {'logit':posterior_logit}
             posterior_stoch_state = self.get_stoch_state(stats)
-            posterior_rssm_state = RSSMDiscState(posterior_logit, posterior_stoch_state, prior_rssm_state.deter)
+            posterior_rssm_state = RSSMDiscState(posterior_logit, posterior_stoch_state, deter_state_mu, deter_state_sigma)
         
         elif self.rssm_type == 'continuous':
             # no more regression, get these the bayes way
@@ -134,7 +136,7 @@ class RSSM(nn.Module, RSSMUtils):
             # needs i_softplus because get_stoch_state does softplus and I'm trying to minimize duplicate files
             stats = {'mean':posterior_mean, 'std':vdp.i_softplus(posterior_std)}
             posterior_stoch_state, std = self.get_stoch_state(stats)
-            posterior_rssm_state = RSSMContState(posterior_mean, std, posterior_stoch_state, prior_rssm_state.deter)
+            posterior_rssm_state = RSSMContState(posterior_mean, std, posterior_stoch_state, deter_state_mu, deter_state_sigma)
         return prior_rssm_state, posterior_rssm_state
 
     def rollout_observation(self, seq_len:int, obs_embed_mu: torch.Tensor, obs_embed_sigma: torch.Tensor, 

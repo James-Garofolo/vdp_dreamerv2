@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.distributions as td
-import vdp
+import dreamerv2.models.vdp as vdp
 
 class DenseModel(nn.Module):
     def __init__(

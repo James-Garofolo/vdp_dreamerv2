@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.distributions as td
 import torch.nn as nn
-import vdp
+import dreamerv2.models.vdp as vdp
 
 
 class ObsEncoder(nn.Module):
