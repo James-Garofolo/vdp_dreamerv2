@@ -72,7 +72,7 @@ class ObsDecoder(nn.Module):
         else:
             self.linear = vdp.Linear(embed_size, np.prod(self.conv_shape).item())
         self.decoder = nn.Sequential(
-            vdp.ConvTranspose2d(4*d, 2*d, k, 1, padding=1),
+            vdp.ConvTranspose2d(4*d, 2*d, k, 1, padding=1, tuple_input_flag=True),
             activation(tuple_input_flag=True),
             vdp.ConvTranspose2d(2*d, d, k, 1, padding=1, tuple_input_flag=True),
             activation(tuple_input_flag=True),
@@ -88,7 +88,7 @@ class ObsDecoder(nn.Module):
         mu_x, sigma_x = self.linear(mu_x, sigma_x)
         mu_x = torch.reshape(mu_x, (squeezed_size, *self.conv_shape))
         sigma_x = torch.reshape(sigma_x, (squeezed_size, *self.conv_shape))
-        mu_x, sigma_x = self.decoder(mu_x, sigma_x)
+        mu_x, sigma_x = self.decoder((mu_x, sigma_x))
         mean = torch.reshape(mu_x, (*batch_shape, *self.output_shape))
         var = torch.reshape(sigma_x, (*batch_shape, *self.output_shape))
         obs_dist = td.Independent(td.Normal(mean, var), len(self.output_shape))

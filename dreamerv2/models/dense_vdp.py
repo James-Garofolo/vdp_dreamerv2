@@ -10,6 +10,7 @@ class DenseModel(nn.Module):
             output_shape,
             input_size, 
             info,
+            input_flag=False,
             output_flag=False
         ):
         """
@@ -24,11 +25,11 @@ class DenseModel(nn.Module):
         self._node_size = info['node_size']
         self.activation = info['activation']
         self.dist = info['dist']
-        self.model = self.build_model(output_flag)
+        self.model = self.build_model(input_flag=input_flag, output_flag=output_flag)
 
     def build_model(self, input_flag = False, output_flag=False):
-        model = [vdp.Linear(self._input_size, self._node_size, input_flag=True)]
-        model += [self.activation(tuple_input_flag=input_flag)]
+        model = [vdp.Linear(self._input_size, self._node_size, input_flag=input_flag, tuple_input_flag=True)]
+        model += [self.activation(tuple_input_flag=True)]
         for i in range(self._layers-1):
             model += [vdp.Linear(self._node_size, self._node_size, tuple_input_flag=True)]
             model += [self.activation(tuple_input_flag=True)]
@@ -36,7 +37,7 @@ class DenseModel(nn.Module):
         return nn.Sequential(*model)
 
     def forward(self, mu_x, sigma_x=torch.tensor(0., requires_grad=True)):
-        dist_mu, dist_sigma = self.model(mu_x, sigma_x)
+        dist_mu, dist_sigma = self.model((mu_x, sigma_x))
         if self.dist == 'normal':
             return td.independent.Independent(td.Normal(dist_mu, dist_sigma), len(self._output_shape))
         if self.dist == 'binary':

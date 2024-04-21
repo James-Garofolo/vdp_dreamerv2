@@ -106,7 +106,7 @@ class RSSM(nn.Module, RSSMUtils):
         imag_log_probs = []
         for t in range(horizon):
             model_state_mu, model_state_sigma = self.get_model_state(rssm_state)
-            action, action_dist = actor((model_state_mu).detach(), (model_state_sigma).detach())
+            action, action_dist = actor(((model_state_mu).detach(), (model_state_sigma).detach()))
             rssm_state = self.rssm_imagine(action, rssm_state)
             next_rssm_states.append(rssm_state)
             action_entropy.append(action_dist.entropy())

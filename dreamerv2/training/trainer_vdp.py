@@ -147,9 +147,7 @@ class Trainer(object):
             discount_arr = self.discount*torch.round(discount_dist.base_dist.probs)              #mean = prob(disc==1)
 
         actor_loss, discount, lambda_returns = self._actor_loss(imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy)
-        # here is a spot where I should probably consider adding the variances into the loss function somehow. 
-        # not sure how yet though
-        value_loss = self._value_loss(imag_modelstate_mus, discount, lambda_returns) 
+        value_loss = self._value_loss(imag_modelstate_mus, imag_modelstate_sigmas, discount, lambda_returns) 
 
         mean_target = torch.mean(lambda_returns, dim=1)
         max_targ = torch.max(mean_target).item()
@@ -182,11 +180,11 @@ class Trainer(object):
         prior_dist, post_dist, div = self._kl_loss(prior, posterior)
 
         # these tend to be big, so I multiply them all by 0.001 to ensure they don't overpower data loss
-        encoder_vdp_kl = 0.001*gather_kl(self.ObsEncoder)
-        rssm_vdp_kl = 0.001*gather_kl(self.RSSM)
-        obs_decoder_vdp_kl = 0.001*gather_kl(self.ObsDecoder)
-        reward_decoder_vdp_kl = 0.001*gather_kl(self.RewardDecoder)
-        discount_decoder_vdp_kl = 0.001*gather_kl(self.DiscountModel)
+        encoder_vdp_kl = 0.001*sum(gather_kl(self.ObsEncoder))
+        rssm_vdp_kl = 0.001*sum(gather_kl(self.RSSM))
+        obs_decoder_vdp_kl = 0.001*sum(gather_kl(self.ObsDecoder))
+        reward_decoder_vdp_kl = 0.001*sum(gather_kl(self.RewardDecoder))
+        discount_decoder_vdp_kl = 0.001*sum(gather_kl(self.DiscountModel))
 
 
         model_loss = self.loss_scale['kl'] * div + reward_loss + obs_loss + self.loss_scale['discount']*pcont_loss +\
@@ -209,18 +207,19 @@ class Trainer(object):
         discount_arr = torch.cat([torch.ones_like(discount_arr[:1]), discount_arr[1:]])
         discount = torch.cumprod(discount_arr[:-1], 0)
         policy_entropy = policy_entropy[1:].unsqueeze(-1)
-        actor_vdp_kl = 0.001*gather_kl(self.ActionModel)
+        actor_vdp_kl = 0.001*sum(gather_kl(self.ActionModel))
         actor_loss = -torch.sum(torch.mean(discount * (objective + self.actor_entropy_scale * policy_entropy), dim=1)) + actor_vdp_kl
         return actor_loss, discount, lambda_returns
 
-    def _value_loss(self, imag_modelstates, discount, lambda_returns):
+    def _value_loss(self, imag_modelstate_mus, imag_modelstate_sigmas, discount, lambda_returns):
         with torch.no_grad():
-            value_modelstates = imag_modelstates[:-1].detach()
+            value_modelstate_mus = imag_modelstate_mus[:-1].detach()
+            value_modelstate_sigmas = imag_modelstate_sigmas[:-1].detach()
             value_discount = discount.detach()
             value_target = lambda_returns.detach()
 
-        value_dist = self.ValueModel(value_modelstates) 
-        value_vdp_kl = 0.001*gather_kl(self.ValueModel)
+        value_dist = self.ValueModel(value_modelstate_mus, value_modelstate_sigmas) 
+        value_vdp_kl = 0.001*sum(gather_kl(self.ValueModel))
         value_loss = -torch.mean(value_discount*value_dist.log_prob(value_target).unsqueeze(-1))+value_vdp_kl
         return value_loss
             
@@ -317,8 +316,8 @@ class Trainer(object):
             self.ObsEncoder = ObsEncoder(obs_shape, embedding_size, config.obs_encoder).to(self.device)
             self.ObsDecoder = ObsDecoder(obs_shape, modelstate_size, config.obs_decoder).to(self.device)
         else:
-            self.ObsEncoder = DenseModel((embedding_size,), int(np.prod(obs_shape)), config.obs_encoder).to(self.device)
-            self.ObsDecoder = DenseModel(obs_shape, modelstate_size, config.obs_decoder).to(self.device)
+            self.ObsEncoder = DenseModel((embedding_size,), int(np.prod(obs_shape)), config.obs_encoder, input_flag=True).to(self.device)
+            self.ObsDecoder = DenseModel(obs_shape, modelstate_size, config.obs_decoder, input_flag=True).to(self.device)
 
     def _optim_initialize(self, config):
         model_lr = config.lr['model']
