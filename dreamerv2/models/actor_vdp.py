@@ -1,5 +1,7 @@
 import torch 
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.distributions as td
 import numpy as np
 import dreamerv2.models.vdp as vdp
 
@@ -45,18 +47,23 @@ class DiscreteActionModel(nn.Module):
 
     def forward(self, model_state, explore=False):
         action_dist = self.get_action_dist(model_state, explore=explore)
-        action = action_dist.sample()
-        action = action + action_dist.probs - action_dist.probs.detach()
+        if explore:
+            action = action_dist.sample()
+        else:
+            action = action_dist.mean()
+        action = action + action_dist.mean - action_dist.mean.detach()
+        action = F.one_hot(torch.argmax(action, dim=-1), num_actions=action.shape[-1])
         return action, action_dist
 
-    def get_action_dist(self, modelstate, explore=False):
-        logits, sigmas = self.model(modelstate)
-        if explore:
-            logits = logits + torch.sqrt(sigmas)*torch.randn_like(logits)
-        if self.dist == 'one_hot':
+    def get_action_dist(self, modelstate):
+        mus, sigmas = self.model(modelstate)
+        #if explore:
+        #    logits = logits + torch.sqrt(sigmas)*torch.randn_like(logits)
+        return td.independent.Independent(td.Normal(mus, sigmas), 1)
+        """if self.dist == 'one_hot':
             return torch.distributions.OneHotCategorical(logits=logits)         
         else:
-            raise NotImplementedError
+            raise NotImplementedError"""
             
     """def add_exploration(self, action: torch.Tensor, itr: int, mode='train'):
         if mode == 'train':

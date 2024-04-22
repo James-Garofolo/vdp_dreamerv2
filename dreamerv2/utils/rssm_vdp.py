@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from typing import Union
 
-RSSMDiscState = namedtuple('RSSMDiscState', ['logit', 'stoch', 'deter_mu', 'deter_sigma'])
+RSSMDiscState = namedtuple('RSSMDiscState', ['logit_mean', 'logit_std', 'stoch', 'deter_mu', 'deter_sigma'])
 RSSMContState = namedtuple('RSSMContState', ['mean', 'std', 'stoch', 'deter_mu', 'deter_sigma'])  
 
 RSSMState = Union[RSSMDiscState, RSSMContState]
@@ -61,20 +61,24 @@ class RSSMUtils(object):
         
     def get_dist(self, rssm_state):
         if self.rssm_type == 'discrete':
-            shape = rssm_state.logit.shape
-            logit = torch.reshape(rssm_state.logit, shape = (*shape[:-1], self.category_size, self.class_size))
-            return td.Independent(td.OneHotCategoricalStraightThrough(logits=logit), 1)
+            shape = rssm_state.logit_mu.shape
+            logit = torch.reshape(rssm_state.logit_mean, shape = (*shape[:-1], self.category_size, self.class_size))
+            logit_std = torch.reshape(rssm_state.logit_std, shape = (*shape[:-1], self.category_size, self.class_size))
+            return td.independent.Independent(td.Normal(logit, logit_std), 1)
         elif self.rssm_type == 'continuous':
             return td.independent.Independent(td.Normal(rssm_state.mean, rssm_state.std), 1)
 
     def get_stoch_state(self, stats):
         if self.rssm_type == 'discrete':
-            logit = stats['logit']
-            shape = logit.shape
-            logit = torch.reshape(logit, shape = (*shape[:-1], self.category_size, self.class_size))
-            dist = torch.distributions.OneHotCategorical(logits=logit)        
+            logit_mu = stats['mean']
+            logit_sigma = stats['std']
+            shape = logit_mu.shape
+            logit_mu = torch.reshape(logit_mu, shape = (*shape[:-1], self.category_size, self.class_size))
+            logit_sigma = torch.reshape(logit_sigma, shape = (*shape[:-1], self.category_size, self.class_size))
+            dist = td.independent.Independent(td.Normal(logit_mu, logit_sigma), 1)     
             stoch = dist.sample()
-            stoch += dist.probs - dist.probs.detach()
+            stoch += dist.mean - dist.mean.detach()
+            stoch = F.one_hot(torch.argmax(stoch, dim=-1), num_actions=stoch.shape[-1])
             return torch.flatten(stoch, start_dim=-2, end_dim=-1)
 
         elif self.rssm_type == 'continuous':

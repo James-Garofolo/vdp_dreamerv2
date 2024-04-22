@@ -138,3 +138,5 @@ dmypy.json
 small_test.py
 test.py
 MNIST
+
+*.pth
