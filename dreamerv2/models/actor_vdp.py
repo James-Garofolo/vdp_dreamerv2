@@ -46,13 +46,13 @@ class DiscreteActionModel(nn.Module):
         return nn.Sequential(*model) 
 
     def forward(self, model_state, explore=False):
-        action_dist = self.get_action_dist(model_state, explore=explore)
+        action_dist = self.get_action_dist(model_state)
         if explore:
             action = action_dist.sample()
         else:
-            action = action_dist.mean()
+            action = action_dist.mean
+        action = F.one_hot(torch.argmax(action, dim=-1), num_classes=action.shape[-1]).float()
         action = action + action_dist.mean - action_dist.mean.detach()
-        action = F.one_hot(torch.argmax(action, dim=-1), num_actions=action.shape[-1])
         return action, action_dist
 
     def get_action_dist(self, modelstate):

@@ -85,7 +85,7 @@ class RSSM(nn.Module, RSSMUtils):
         
         if self.rssm_type == 'discrete':
             prior_mean, prior_std = self.fc_prior((deter_state_mu, deter_state_sigma))
-            stats = {'mean':prior_mean, 'std':vdp.i_softplus(prior_std)}
+            stats = {'mean':prior_mean, 'std':prior_std}
             prior_stoch_state = self.get_stoch_state(stats)
             prior_rssm_state = RSSMDiscState(prior_mean, prior_std, prior_stoch_state, deter_state_mu, deter_state_sigma)
 

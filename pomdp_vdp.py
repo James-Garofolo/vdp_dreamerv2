@@ -6,7 +6,7 @@ import gymnasium
 from dreamerv2.utils.wrapper import GymMinAtar, OneHotAction, breakoutPOMDP, space_invadersPOMDP, seaquestPOMDP, asterixPOMDP, freewayPOMDP
 from dreamerv2.training.config_vdp import MinAtarConfig
 from dreamerv2.training.trainer_vdp import Trainer
-from dreamerv2.training.evaluator import Evaluator
+from dreamerv2.training.evaluator_vdp import Evaluator
 from tqdm import tqdm
 
 pomdp_wrappers = {

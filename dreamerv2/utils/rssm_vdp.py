@@ -3,6 +3,7 @@ import torch.distributions as td
 import torch
 import torch.nn.functional as F
 from typing import Union
+from dreamerv2.models import vdp
 
 RSSMDiscState = namedtuple('RSSMDiscState', ['logit_mean', 'logit_std', 'stoch', 'deter_mu', 'deter_sigma'])
 RSSMContState = namedtuple('RSSMContState', ['mean', 'std', 'stoch', 'deter_mu', 'deter_sigma'])  
@@ -28,7 +29,8 @@ class RSSMUtils(object):
     def rssm_seq_to_batch(self, rssm_state, batch_size, seq_len):
         if self.rssm_type == 'discrete':
             return RSSMDiscState(
-                seq_to_batch(rssm_state.logit[:seq_len], batch_size, seq_len),
+                seq_to_batch(rssm_state.logit_mean[:seq_len], batch_size, seq_len),
+                seq_to_batch(rssm_state.logit_std[:seq_len], batch_size, seq_len),
                 seq_to_batch(rssm_state.stoch[:seq_len], batch_size, seq_len),
                 seq_to_batch(rssm_state.deter_mu[:seq_len], batch_size, seq_len),
                 seq_to_batch(rssm_state.deter_sigma[:seq_len], batch_size, seq_len)
@@ -45,7 +47,8 @@ class RSSMUtils(object):
     def rssm_batch_to_seq(self, rssm_state, batch_size, seq_len):
         if self.rssm_type == 'discrete':
             return RSSMDiscState(
-                batch_to_seq(rssm_state.logit, batch_size, seq_len),
+                batch_to_seq(rssm_state.logit_mean, batch_size, seq_len),
+                batch_to_seq(rssm_state.logit_std, batch_size, seq_len),
                 batch_to_seq(rssm_state.stoch, batch_size, seq_len),
                 batch_to_seq(rssm_state.deter_mu, batch_size, seq_len),
                 batch_to_seq(rssm_state.deter_sigma, batch_size, seq_len)
@@ -61,7 +64,7 @@ class RSSMUtils(object):
         
     def get_dist(self, rssm_state):
         if self.rssm_type == 'discrete':
-            shape = rssm_state.logit_mu.shape
+            shape = rssm_state.logit_mean.shape
             logit = torch.reshape(rssm_state.logit_mean, shape = (*shape[:-1], self.category_size, self.class_size))
             logit_std = torch.reshape(rssm_state.logit_std, shape = (*shape[:-1], self.category_size, self.class_size))
             return td.independent.Independent(td.Normal(logit, logit_std), 1)
@@ -77,8 +80,8 @@ class RSSMUtils(object):
             logit_sigma = torch.reshape(logit_sigma, shape = (*shape[:-1], self.category_size, self.class_size))
             dist = td.independent.Independent(td.Normal(logit_mu, logit_sigma), 1)     
             stoch = dist.sample()
+            stoch = F.one_hot(torch.argmax(stoch, dim=-1), num_classes=stoch.shape[-1]).float()
             stoch += dist.mean - dist.mean.detach()
-            stoch = F.one_hot(torch.argmax(stoch, dim=-1), num_actions=stoch.shape[-1])
             return torch.flatten(stoch, start_dim=-2, end_dim=-1)
 
         elif self.rssm_type == 'continuous':
@@ -90,7 +93,8 @@ class RSSMUtils(object):
     def rssm_stack_states(self, rssm_states, dim):
         if self.rssm_type == 'discrete':
             return RSSMDiscState(
-                torch.stack([state.logit for state in rssm_states], dim=dim),
+                torch.stack([state.logit_mean for state in rssm_states], dim=dim),
+                torch.stack([state.logit_std for state in rssm_states], dim=dim),
                 torch.stack([state.stoch for state in rssm_states], dim=dim),
                 torch.stack([state.deter_mu for state in rssm_states], dim=dim),
                 torch.stack([state.deter_sigma for state in rssm_states], dim=dim)
@@ -117,7 +121,8 @@ class RSSMUtils(object):
     def rssm_detach(self, rssm_state):
         if self.rssm_type == 'discrete':
             return RSSMDiscState(
-                rssm_state.logit.detach(),  
+                rssm_state.logit_mean.detach(),  
+                rssm_state.logit_std.detach(), 
                 rssm_state.stoch.detach(),
                 rssm_state.deter_mu.detach(),
                 rssm_state.deter_sigma.detach()
@@ -134,6 +139,7 @@ class RSSMUtils(object):
     def _init_rssm_state(self, batch_size, **kwargs):
         if self.rssm_type  == 'discrete':
             return RSSMDiscState(
+                torch.zeros(batch_size, self.stoch_size, **kwargs).to(self.device),
                 torch.zeros(batch_size, self.stoch_size, **kwargs).to(self.device),
                 torch.zeros(batch_size, self.stoch_size, **kwargs).to(self.device),
                 torch.zeros(batch_size, self.deter_size, **kwargs).to(self.device),
