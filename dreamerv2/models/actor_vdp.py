@@ -16,6 +16,7 @@ class DiscreteActionModel(nn.Module):
         expl_info
     ):
         super().__init__()
+        self.explore_buffer = []
         self.action_size = action_size
         self.deter_size = deter_size
         self.stoch_size = stoch_size
@@ -56,15 +57,14 @@ class DiscreteActionModel(nn.Module):
         return action, action_dist, sigmas
 
     def get_action_dist(self, modelstate, explore=False):
-        if torch.any(torch.isinf(modelstate[0])) or torch.any(torch.isinf(modelstate[1])):
-            print("modelstate's fault")
-        logits, sigmas = self.model(modelstate)
-        if torch.any(torch.isnan(logits)):
-            print("logits's fault")
-        if torch.any(torch.isnan(sigmas)):
-            print("sigmas's fault")
+        mus, sigmas = self.model(modelstate)
         if explore:
-            logits = logits + torch.sqrt(sigmas)*torch.randn_like(logits)
+            logits = mus + torch.sqrt(sigmas)*torch.randn_like(sigmas)
+            self.explore_buffer.append((torch.argmax(logits)!=torch.argmax(mus)).item())
+            if len(self.explore_buffer) > 1000:
+                self.explore_buffer.pop(0)
+        else:
+            logits = mus
         if self.dist == 'one_hot':
             return torch.distributions.OneHotCategorical(logits=logits), sigmas        
         else:

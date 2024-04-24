@@ -9,6 +9,7 @@ from dreamerv2.training.trainer_vdp import Trainer
 from dreamerv2.training.evaluator_vdp import Evaluator
 from tqdm import tqdm
 
+
 pomdp_wrappers = {
     'Breakout-v1':breakoutPOMDP,
     'Seaquest-v1':seaquestPOMDP,
@@ -71,13 +72,15 @@ def main(args):
     prev_action = torch.zeros(1, trainer.action_size).to(trainer.device)
     episode_actor_ent = []
     scores = []
+    averages = []
     best_mean_score = 0
     train_episodes = 0
     best_save_path = os.path.join(model_dir, 'models_best.pth')
-    pbar = tqdm(range(1, trainer.config.train_steps), desc="Best Score: 0")
+    pbar = tqdm(range(1, trainer.config.train_steps), desc="Best Score: 0, exp rate: 0", leave=True)
     for iter in pbar:  
         if iter%trainer.config.train_every == 0:
             train_metrics = trainer.train_batch(train_metrics)
+            pbar.set_description(f"Best Score: {best_mean_score}, exp rate: {np.sum(trainer.ActionModel.explore_buffer)/len(trainer.ActionModel.explore_buffer)}")
         if iter%trainer.config.slow_target_update == 0:
             trainer.update_target()                
         if iter%trainer.config.save_every == 0:
@@ -109,9 +112,10 @@ def main(args):
             if len(scores)>100:
                 scores.pop(0)
                 current_average = np.mean(scores)
+                averages.append(current_average)
                 if current_average>best_mean_score:
                     best_mean_score = current_average 
-                    pbar.set_description(f"Best Score: {best_mean_score}")
+                    pbar.set_description(f"Best Score: {best_mean_score}, exp rate: {np.sum(trainer.ActionModel.explore_buffer)/len(trainer.ActionModel.explore_buffer)}")
                     #print('saving best model with mean score : ', best_mean_score)
                     save_dict = trainer.get_save_dict()
                     torch.save(save_dict, best_save_path)
@@ -129,6 +133,7 @@ def main(args):
 
     '''evaluating probably best model'''
     evaluator.eval_saved_agent(env, best_save_path)
+    return averages
 
 if __name__ == "__main__":
 
@@ -141,4 +146,6 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=50, help='Batch size')
     parser.add_argument('--seq_len', type=int, default=50, help='Sequence Length (chunk length)')
     args = parser.parse_args()
-    main(args)
+    avgs = main(args)
+    avgs = np.array(avgs)
+    np.savetxt("avgs.csv", avgs, delimiter=',')

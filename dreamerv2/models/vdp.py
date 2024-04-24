@@ -30,9 +30,12 @@ class Linear(torch.nn.Module):
         self.bias = bias
         self.mu = torch.nn.Linear(in_features, out_features, bias)
         self.sigma = torch.nn.Linear(in_features, out_features, bias)
+        self.output_flag = output_flag
         if output_flag:
             torch.nn.init.zeros_(self.mu.weight)
             torch.nn.init.ones_(self.sigma.weight)
+            """with torch.no_grad():
+                self.sigma.weight *= 100"""
         else:
             torch.nn.init.xavier_normal_(self.mu.weight)
             torch.nn.init.uniform_(self.sigma.weight, a=0, b=5)
@@ -63,7 +66,12 @@ class Linear(torch.nn.Module):
             pass
         if self.bias:
             sigma_y += softplus(self.sigma.bias)
-        sigma_y *= 1e-3
+
+        if self.output_flag:
+            sigma_y *= 0.1
+        else:
+            sigma_y *= 1e-3
+
         return mu_y, sigma_y
 
     def kl_term(self):
