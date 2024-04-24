@@ -41,7 +41,8 @@ class DenseModel(nn.Module):
         if self.dist == 'normal':
             return td.independent.Independent(td.Normal(dist_mu, dist_sigma), len(self._output_shape))
         if self.dist == 'binary':
-            return td.independent.Independent(td.Bernoulli(logits=dist_mu), len(self._output_shape))
+            logits = dist_mu + torch.sqrt(dist_sigma)*torch.rand_like(dist_sigma)
+            return td.independent.Independent(td.Bernoulli(logits=logits), len(self._output_shape))
         if self.dist == None:
             return dist_mu, dist_sigma
 

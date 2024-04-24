@@ -89,7 +89,7 @@ def main(args):
         _, posterior_rssm_state = trainer.RSSM.rssm_observe(embed_mu.detach(), embed_sigma.detach(), 
                                                             prev_action, not done, prev_rssmstate)
         model_state_mu, model_state_sigma = trainer.RSSM.get_model_state(posterior_rssm_state)
-        action, action_dist = trainer.ActionModel((model_state_mu.detach(), model_state_sigma.detach()), explore=True) 
+        action, action_dist,_ = trainer.ActionModel((model_state_mu.detach(), model_state_sigma.detach()), explore=True) 
         # changed how explore works
         #action = trainer.ActionModel.add_exploration(action, iter).detach()
         action_ent = torch.mean(action_dist.entropy()).item()

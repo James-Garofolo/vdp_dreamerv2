@@ -46,24 +46,29 @@ class DiscreteActionModel(nn.Module):
         return nn.Sequential(*model) 
 
     def forward(self, model_state, explore=False):
-        action_dist = self.get_action_dist(model_state)
+        action_dist, sigmas = self.get_action_dist(model_state, explore)
         if explore:
             action = action_dist.sample()
         else:
             action = action_dist.mean
-        action = F.one_hot(torch.argmax(action, dim=-1), num_classes=action.shape[-1]).float()
-        action = action + action_dist.mean - action_dist.mean.detach()
-        return action, action_dist
+        action = action_dist.sample()
+        action = action + action_dist.probs - action_dist.probs.detach()
+        return action, action_dist, sigmas
 
-    def get_action_dist(self, modelstate):
-        mus, sigmas = self.model(modelstate)
-        #if explore:
-        #    logits = logits + torch.sqrt(sigmas)*torch.randn_like(logits)
-        return td.independent.Independent(td.Normal(mus, sigmas), 1)
-        """if self.dist == 'one_hot':
-            return torch.distributions.OneHotCategorical(logits=logits)         
+    def get_action_dist(self, modelstate, explore=False):
+        if torch.any(torch.isinf(modelstate[0])) or torch.any(torch.isinf(modelstate[1])):
+            print("modelstate's fault")
+        logits, sigmas = self.model(modelstate)
+        if torch.any(torch.isnan(logits)):
+            print("logits's fault")
+        if torch.any(torch.isnan(sigmas)):
+            print("sigmas's fault")
+        if explore:
+            logits = logits + torch.sqrt(sigmas)*torch.randn_like(logits)
+        if self.dist == 'one_hot':
+            return torch.distributions.OneHotCategorical(logits=logits), sigmas        
         else:
-            raise NotImplementedError"""
+            raise NotImplementedError
             
     """def add_exploration(self, action: torch.Tensor, itr: int, mode='train'):
         if mode == 'train':

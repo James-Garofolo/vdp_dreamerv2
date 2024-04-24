@@ -104,18 +104,28 @@ class RSSM(nn.Module, RSSMUtils):
         next_rssm_states = []
         action_entropy = []
         imag_log_probs = []
-        for t in range(horizon):
+        action_sigmas = []
+        for t in range(horizon):##*5):
+            """heyo its jim, Im thinking we skip the first step in the uncertainty assessment thing
+            and just start going from round 1. then from there maybe we do like x times the original or smth"""
             model_state_mu, model_state_sigma = self.get_model_state(rssm_state)
-            action, action_dist = actor(((model_state_mu).detach(), (model_state_sigma).detach()))
+            """print("\n", t, torch.max(model_state_sigma, dim=-1)[0][:5])
+            if t == 0 or t == 1:
+                print(rssm_state)"""
+            action, action_dist, action_sigma = actor(((model_state_mu).detach(), (model_state_sigma).detach()))
             rssm_state = self.rssm_imagine(action, rssm_state)
-            next_rssm_states.append(rssm_state)
-            action_entropy.append(action_dist.entropy())
-            imag_log_probs.append(action_dist.log_prob(torch.round(action.detach())))
+            if t < horizon:
+                next_rssm_states.append(rssm_state)
+                action_entropy.append(action_dist.entropy())
+                imag_log_probs.append(action_dist.log_prob(torch.round(action.detach())))
+                action_sigmas.append(action_sigma)
+
 
         next_rssm_states = self.rssm_stack_states(next_rssm_states, dim=0)
         action_entropy = torch.stack(action_entropy, dim=0)
         imag_log_probs = torch.stack(imag_log_probs, dim=0)
-        return next_rssm_states, imag_log_probs, action_entropy
+        action_sigmas = torch.stack(action_sigmas, dim=0)
+        return next_rssm_states, imag_log_probs, action_entropy, action_sigmas
 
     def rssm_observe(self, obs_embed_mu, obs_embed_sigma, prev_action, prev_nonterm, prev_rssm_state):
         prior_rssm_state = self.rssm_imagine(prev_action, prev_rssm_state, prev_nonterm)

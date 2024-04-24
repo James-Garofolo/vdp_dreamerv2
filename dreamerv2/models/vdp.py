@@ -38,6 +38,12 @@ class Linear(torch.nn.Module):
             torch.nn.init.uniform_(self.sigma.weight, a=0, b=5)
 
     def forward(self, mu_x, sigma_x=torch.tensor(0., requires_grad=True)):
+        if torch.any(torch.isnan(self.mu.weight)) or torch.any(torch.isnan(self.sigma.weight)):
+            raise ValueError("nans from within")
+        if torch.any(torch.isinf(self.mu.weight)) or torch.any(torch.isinf(self.sigma.weight)):
+            raise ValueError("infs from within")
+        if torch.any(self.sigma.weight == 0):
+            raise ValueError("0s from within")
         if self.input_flag:
             mu_y = self.mu(mu_x)
             sigma_y = mu_x ** 2 @ softplus(self.sigma.weight).T
@@ -266,18 +272,33 @@ class TanH(torch.nn.Module):
 
 
 class Softmax(torch.nn.Module):
-    def __init__(self, dim=1, tuple_input_flag=False):
+    def __init__(self, dim=1, tuple_input_flag=False, independent_probs=True):
         super(Softmax, self).__init__()
         self.tuple_input_flag = tuple_input_flag
+        self.independent = independent_probs
         self.softmax = torch.nn.Softmax(dim=dim)
 
     def forward(self, mu, sigma=torch.tensor(0., requires_grad=True)):
         if self.tuple_input_flag:
             mu, sigma = mu
-        mu = self.softmax(mu)
-        J = mu*(1-mu)
-        sigma = (J**2) * sigma
-        return mu, sigma
+        
+        mu_a = self.softmax(mu)
+        if self.independent:
+            J = mu_a*(1-mu_a)
+            sigma = (J**2) * sigma
+        else:
+
+            if mu.shape == sigma.shape:
+                sigma = torch.diag_embed(sigma)
+
+            pp1 = torch.unsqueeze(mu_a, 2)
+            pp2 = torch.unsqueeze(mu_a, 1)
+            ppT = pp1 @ pp2
+            p_diag = torch.diag_embed(mu_a)
+            grad = p_diag - ppT
+            sigma = torch.nan_to_num(grad @ (sigma @ grad.mT), 0, 0, 0)
+
+        return mu_a, sigma
 
 
 class BatchNorm2d(torch.nn.Module):

@@ -13,6 +13,7 @@ RSSMState = Union[RSSMDiscState, RSSMContState]
 class RSSMUtils(object):
     '''utility functions for dealing with rssm states'''
     def __init__(self, rssm_type, info):
+        self.vdp_softmax = vdp.Softmax()
         self.rssm_type = rssm_type
         if rssm_type == 'continuous':
             self.deter_size = info['deter_size']
@@ -65,9 +66,10 @@ class RSSMUtils(object):
     def get_dist(self, rssm_state):
         if self.rssm_type == 'discrete':
             shape = rssm_state.logit_mean.shape
-            logit = torch.reshape(rssm_state.logit_mean, shape = (*shape[:-1], self.category_size, self.class_size))
+            logit_mu = torch.reshape(rssm_state.logit_mean, shape = (*shape[:-1], self.category_size, self.class_size))
             logit_std = torch.reshape(rssm_state.logit_std, shape = (*shape[:-1], self.category_size, self.class_size))
-            return td.independent.Independent(td.Normal(logit, logit_std), 1)
+            logit = logit_mu + torch.sqrt(logit_std) * torch.rand_like(logit_std)
+            return td.Independent(td.OneHotCategoricalStraightThrough(logits=logit), 1)
         elif self.rssm_type == 'continuous':
             return td.independent.Independent(td.Normal(rssm_state.mean, rssm_state.std), 1)
 
@@ -78,16 +80,16 @@ class RSSMUtils(object):
             shape = logit_mu.shape
             logit_mu = torch.reshape(logit_mu, shape = (*shape[:-1], self.category_size, self.class_size))
             logit_sigma = torch.reshape(logit_sigma, shape = (*shape[:-1], self.category_size, self.class_size))
-            dist = td.independent.Independent(td.Normal(logit_mu, logit_sigma), 1)     
+            logit = logit_mu + torch.sqrt(logit_sigma) * torch.rand_like(logit_sigma)
+            dist = torch.distributions.OneHotCategorical(logits=logit)        
             stoch = dist.sample()
-            stoch = F.one_hot(torch.argmax(stoch, dim=-1), num_classes=stoch.shape[-1]).float()
-            stoch += dist.mean - dist.mean.detach()
+            stoch += dist.probs - dist.probs.detach()
             return torch.flatten(stoch, start_dim=-2, end_dim=-1)
 
         elif self.rssm_type == 'continuous':
             mean = stats['mean']
             std = stats['std']
-            std = std + self.min_std
+            std = torch.sqrt(std) + self.min_std
             return mean + std*torch.randn_like(mean), std
 
     def rssm_stack_states(self, rssm_states, dim):
@@ -109,14 +111,18 @@ class RSSMUtils(object):
             )
 
     def get_model_state(self, rssm_state):
-        return torch.cat((rssm_state.deter_mu, 
-                          rssm_state.stoch), dim=-1), \
-                          torch.cat((rssm_state.deter_sigma, 
-                            torch.zeros_like(rssm_state.stoch)), dim=-1)
-        """if self.rssm_type == 'discrete':
-            return torch.cat((rssm_state.deter, rssm_state.stoch), dim=-1)
+        if self.rssm_type == 'discrete':
+            _, stoch_probs_sigma = self.vdp_softmax(rssm_state.logit_mean,
+                                                                 rssm_state.logit_std)
+            return torch.cat((rssm_state.deter_mu, 
+                            rssm_state.stoch), dim=-1), \
+                    torch.cat((rssm_state.deter_sigma, 
+                            rssm_state.logit_std), dim=-1)
+                            #stoch_probs_sigma), dim=-1)
+        
         elif self.rssm_type == 'continuous':
-            return torch.cat((rssm_state.deter, rssm_state.stoch), dim=-1)"""
+            return torch.cat((rssm_state.deter_mu, rssm_state.stoch), dim=-1),\
+                   torch.cat((rssm_state.deter_sigma, rssm_state.std))
 
     def rssm_detach(self, rssm_state):
         if self.rssm_type == 'discrete':

@@ -69,6 +69,7 @@ class Trainer(object):
         std_targ = []
 
         for i in range(self.collect_intervals):
+            ##print("\n",i)
             obs, actions, rewards, terms = self.buffer.sample()
             obs = torch.tensor(obs, dtype=torch.float32).to(self.device)                         #t, t+seq_len 
             actions = torch.tensor(actions, dtype=torch.float32).to(self.device)                 #t-1, t+seq_len-1
@@ -135,7 +136,7 @@ class Trainer(object):
             batched_posterior = self.RSSM.rssm_detach(self.RSSM.rssm_seq_to_batch(posterior, self.batch_size, self.seq_len-1))
         
         with FreezeParameters(self.world_list):
-            imag_rssm_states, imag_log_prob, policy_entropy = self.RSSM.rollout_imagination(self.horizon, self.ActionModel, batched_posterior)
+            imag_rssm_states, imag_log_prob, policy_entropy, action_sigmas = self.RSSM.rollout_imagination(self.horizon, self.ActionModel, batched_posterior)
         
         imag_modelstate_mus, imag_modelstate_sigmas = self.RSSM.get_model_state(imag_rssm_states)
         with FreezeParameters(self.world_list+self.value_list+[self.TargetValueModel]+[self.DiscountModel]):
@@ -146,7 +147,7 @@ class Trainer(object):
             discount_dist = self.DiscountModel(imag_modelstate_mus, imag_modelstate_sigmas)
             discount_arr = self.discount*torch.round(discount_dist.base_dist.probs)              #mean = prob(disc==1)
 
-        actor_loss, discount, lambda_returns = self._actor_loss(imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy)
+        actor_loss, discount, lambda_returns = self._actor_loss(imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy, action_sigmas)
         value_loss = self._value_loss(imag_modelstate_mus, imag_modelstate_sigmas, discount, lambda_returns) 
 
         mean_target = torch.mean(lambda_returns, dim=1)
@@ -177,21 +178,23 @@ class Trainer(object):
         obs_loss = self._obs_loss(obs_dist, obs[:-1])
         reward_loss = self._reward_loss(reward_dist, rewards[1:])
         pcont_loss = self._pcont_loss(pcont_dist, nonterms[1:])
-        prior_dist, post_dist, div = self._kl_loss(prior, posterior)
+        prior_dist, post_dist, div, prior_log_det, post_log_det = self._kl_loss(prior, posterior)
 
         # these tend to be big, so I multiply them all by 0.001 to ensure they don't overpower data loss
-        encoder_vdp_kl = 0.001*sum(gather_kl(self.ObsEncoder))
-        rssm_vdp_kl = 0.001*sum(gather_kl(self.RSSM))
-        obs_decoder_vdp_kl = 0.001*sum(gather_kl(self.ObsDecoder))
-        reward_decoder_vdp_kl = 0.001*sum(gather_kl(self.RewardDecoder))
-        discount_decoder_vdp_kl = 0.001*sum(gather_kl(self.DiscountModel))
+        encoder_vdp_kl = 0.01*sum(gather_kl(self.ObsEncoder))/len(gather_kl(self.ObsEncoder))
+        rssm_vdp_kl = 0.01*sum(gather_kl(self.RSSM))/len(gather_kl(self.RSSM))
+        obs_decoder_vdp_kl = 0.01*sum(gather_kl(self.ObsDecoder))/len(gather_kl(self.ObsDecoder))
+        reward_decoder_vdp_kl = 0.01*sum(gather_kl(self.RewardDecoder))/len(gather_kl(self.RewardDecoder))
+        discount_decoder_vdp_kl = 0.01*sum(gather_kl(self.DiscountModel))/len(gather_kl(self.DiscountModel))
 
 
         model_loss = self.loss_scale['kl'] * div + reward_loss + obs_loss + self.loss_scale['discount']*pcont_loss +\
-            + encoder_vdp_kl + rssm_vdp_kl + obs_decoder_vdp_kl + reward_decoder_vdp_kl + discount_decoder_vdp_kl
+            + encoder_vdp_kl + rssm_vdp_kl + obs_decoder_vdp_kl + reward_decoder_vdp_kl + discount_decoder_vdp_kl +\
+            prior_log_det + post_log_det
+        #print(model_loss, encoder_vdp_kl, rssm_vdp_kl, obs_decoder_vdp_kl, reward_decoder_vdp_kl, discount_decoder_vdp_kl)
         return model_loss, div, obs_loss, reward_loss, pcont_loss, prior_dist, post_dist, posterior
 
-    def _actor_loss(self, imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy):
+    def _actor_loss(self, imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy, action_sigmas):
 
         lambda_returns = compute_return(imag_reward[:-1], imag_value[:-1], discount_arr[:-1], bootstrap=imag_value[-1], lambda_=self.lambda_)
         
@@ -208,7 +211,11 @@ class Trainer(object):
         discount = torch.cumprod(discount_arr[:-1], 0)
         policy_entropy = policy_entropy[1:].unsqueeze(-1)
         actor_vdp_kl = 0.001*sum(gather_kl(self.ActionModel))
-        actor_loss = -torch.sum(torch.mean(discount * (objective + self.actor_entropy_scale * policy_entropy), dim=1)) + actor_vdp_kl
+        sigma_clamped = torch.log(1+torch.exp(torch.clamp(action_sigmas, 0, 88)))
+        actor_log_det = torch.mean(torch.log(torch.log(torch.sum(sigma_clamped, dim=1))))
+        actor_loss = -torch.sum(torch.mean(discount * (objective + self.actor_entropy_scale * policy_entropy), dim=1)) +\
+              actor_vdp_kl + actor_log_det
+        
         return actor_loss, discount, lambda_returns
 
     def _value_loss(self, imag_modelstate_mus, imag_modelstate_sigmas, discount, lambda_returns):
@@ -230,6 +237,11 @@ class Trainer(object):
     def _kl_loss(self, prior, posterior):
         prior_dist = self.RSSM.get_dist(prior)
         post_dist = self.RSSM.get_dist(posterior)
+        prior_sigma_clamped = torch.log(1+torch.exp(torch.clamp(prior.logit_std, 0, 88)))
+        prior_log_det = torch.mean(torch.log(torch.log(torch.sum(prior_sigma_clamped, dim=1))))
+        post_sigma_clamped = torch.log(1+torch.exp(torch.clamp(posterior.logit_std, 0, 88)))
+        post_log_det = torch.mean(torch.log(torch.log(torch.sum(post_sigma_clamped, dim=1))))
+
         if self.kl_info['use_kl_balance']:
             alpha = self.kl_info['kl_balance_scale']
             kl_lhs = torch.mean(torch.distributions.kl.kl_divergence(self.RSSM.get_dist(self.RSSM.rssm_detach(posterior)), prior_dist))
@@ -245,7 +257,7 @@ class Trainer(object):
             if self.kl_info['use_free_nats']:
                 free_nats = self.kl_info['free_nats']
                 kl_loss = torch.max(kl_loss, kl_loss.new_full(kl_loss.size(), free_nats))
-        return prior_dist, post_dist, kl_loss
+        return prior_dist, post_dist, kl_loss, prior_log_det, post_log_det
     
     def _reward_loss(self, reward_dist, rewards):
         reward_loss = -torch.mean(reward_dist.log_prob(rewards))
