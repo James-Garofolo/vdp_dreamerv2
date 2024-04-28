@@ -77,59 +77,66 @@ def main(args):
     train_episodes = 0
     best_save_path = os.path.join(model_dir, 'models_best.pth')
     pbar = tqdm(range(1, trainer.config.train_steps), desc="Best Score: 0, exp rate: 0", leave=True)
-    for iter in pbar:  
-        if iter%trainer.config.train_every == 0:
-            train_metrics = trainer.train_batch(train_metrics)
-            pbar.set_description(f"Best Score: {best_mean_score}, exp rate: {np.sum(trainer.ActionModel.explore_buffer)/len(trainer.ActionModel.explore_buffer)}")
-        if iter%trainer.config.slow_target_update == 0:
-            trainer.update_target()                
-        if iter%trainer.config.save_every == 0:
-            trainer.save_model(iter)
-        #with torch.no_grad():
-        # can't call with torch.no_grad() on vdp models because activation functions need autograd
-        # instead have to just call .detach() on each tensor
-        embed_mu, embed_sigma = trainer.ObsEncoder(torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(trainer.device))  
-        _, posterior_rssm_state = trainer.RSSM.rssm_observe(embed_mu.detach(), embed_sigma.detach(), 
-                                                            prev_action, not done, prev_rssmstate)
-        model_state_mu, model_state_sigma = trainer.RSSM.get_model_state(posterior_rssm_state)
-        action, action_dist,_ = trainer.ActionModel((model_state_mu.detach(), model_state_sigma.detach()), explore=True) 
-        # changed how explore works
-        #action = trainer.ActionModel.add_exploration(action, iter).detach()
-        action_ent = torch.mean(action_dist.entropy()).item()
-        episode_actor_ent.append(action_ent)
+    try:
+        for iter in pbar:  
+            if iter%trainer.config.train_every == 0:
+                train_metrics = trainer.train_batch(train_metrics)
+                exp_rate = np.mean(trainer.ActionModel.explore_buffer)
+                
+                pbar.set_description(f"Best Score: {best_mean_score}, exp rate: {exp_rate}")
+            if iter%trainer.config.slow_target_update == 0:
+                trainer.update_target()                
+            if iter%trainer.config.save_every == 0:
+                trainer.save_model(iter)
+            #with torch.no_grad():
+            # can't call with torch.no_grad() on vdp models because activation functions need autograd
+            # instead have to just call .detach() on each tensor
+            embed_mu, embed_sigma = trainer.ObsEncoder(torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(trainer.device))  
+            _, posterior_rssm_state = trainer.RSSM.rssm_observe(embed_mu.detach(), embed_sigma.detach(), 
+                                                                prev_action, not done, prev_rssmstate)
+            model_state_mu, model_state_sigma = trainer.RSSM.get_model_state(posterior_rssm_state)
+            action, action_dist,_ = trainer.ActionModel((model_state_mu.detach(), model_state_sigma.detach()), explore=True) 
+            # changed how explore works
+            #action = trainer.ActionModel.add_exploration(action, iter).detach()
+            action_ent = torch.mean(action_dist.entropy()).item()
+            episode_actor_ent.append(action_ent)
 
-        next_obs, rew, done, _, _ = env.step(action.squeeze(0).detach().cpu().numpy())
-        score += rew
+            next_obs, rew, done, _, _ = env.step(action.squeeze(0).detach().cpu().numpy())
+            score += rew
 
-        if done:
-            train_episodes += 1
-            trainer.buffer.add(obs, action.squeeze(0).detach().cpu().numpy(), rew, done)
-            train_metrics['train_rewards'] = score
-            train_metrics['action_ent'] =  np.mean(episode_actor_ent)
-            train_metrics['train_steps'] = iter
-            #wandb.log(train_metrics, step=train_episodes)
-            scores.append(score)
-            if len(scores)>100:
-                scores.pop(0)
-                current_average = np.mean(scores)
-                averages.append(current_average)
-                if current_average>best_mean_score:
-                    best_mean_score = current_average 
-                    pbar.set_description(f"Best Score: {best_mean_score}, exp rate: {np.sum(trainer.ActionModel.explore_buffer)/len(trainer.ActionModel.explore_buffer)}")
-                    #print('saving best model with mean score : ', best_mean_score)
-                    save_dict = trainer.get_save_dict()
-                    torch.save(save_dict, best_save_path)
-            
-            (obs,_), score = env.reset(), 0
-            done = False
-            prev_rssmstate = trainer.RSSM._init_rssm_state(1)
-            prev_action = torch.zeros(1, trainer.action_size).to(trainer.device)
-            episode_actor_ent = []
-        else:
-            trainer.buffer.add(obs, action.squeeze(0).detach().cpu().numpy(), rew, done)
-            obs = next_obs
-            prev_rssmstate = posterior_rssm_state
-            prev_action = action
+            if done:
+                train_episodes += 1
+                trainer.buffer.add(obs, action.squeeze(0).detach().cpu().numpy(), rew, done)
+                train_metrics['train_rewards'] = score
+                train_metrics['action_ent'] =  np.mean(episode_actor_ent)
+                train_metrics['train_steps'] = iter
+                #wandb.log(train_metrics, step=train_episodes)
+                scores.append(score)
+                if len(scores)>100:
+                    scores.pop(0)
+                    current_average = np.mean(scores)
+                    averages.append(current_average)
+                    if current_average>best_mean_score:
+                        best_mean_score = current_average 
+                        exp_rate = np.mean(trainer.ActionModel.explore_buffer)
+                        
+                        pbar.set_description(f"Best Score: {best_mean_score}, exp rate: {exp_rate}")
+                        #print('saving best model with mean score : ', best_mean_score)
+                        save_dict = trainer.get_save_dict()
+                        torch.save(save_dict, best_save_path)
+                
+                (obs,_), score = env.reset(), 0
+                done = False
+                prev_rssmstate = trainer.RSSM._init_rssm_state(1)
+                prev_action = torch.zeros(1, trainer.action_size).to(trainer.device)
+                episode_actor_ent = []
+            else:
+                trainer.buffer.add(obs, action.squeeze(0).detach().cpu().numpy(), rew, done)
+                obs = next_obs
+                prev_rssmstate = posterior_rssm_state
+                prev_action = action
+    except KeyboardInterrupt:
+        pass
 
     '''evaluating probably best model'''
     evaluator.eval_saved_agent(env, best_save_path)

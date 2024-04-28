@@ -63,7 +63,7 @@ class Evaluator(object):
                 embed_mu, embed_sigma = self.ObsEncoder(torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device))    
                 _, posterior_rssm_state = self.RSSM.rssm_observe(embed_mu, embed_sigma, prev_action, not done, prev_rssmstate)
                 model_state = self.RSSM.get_model_state(posterior_rssm_state)
-                action, _ = self.ActionModel(model_state)
+                action, _, _ = self.ActionModel(model_state)
                 prev_rssmstate = posterior_rssm_state
                 prev_action = action
                 next_obs, rew, done, _, _ = env.step(action.squeeze(0).detach().cpu().numpy())

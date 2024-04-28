@@ -68,7 +68,7 @@ class Linear(torch.nn.Module):
             sigma_y += softplus(self.sigma.bias)
 
         if self.output_flag:
-            sigma_y *= 0.1
+            sigma_y *= 0.02
         else:
             sigma_y *= 1e-3
 

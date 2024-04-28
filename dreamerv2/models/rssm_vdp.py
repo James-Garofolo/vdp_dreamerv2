@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from dreamerv2.utils.rssm_vdp import RSSMUtils, RSSMContState, RSSMDiscState
 import dreamerv2.models.vdp as vdp
+import numpy as np
+from scipy.stats import wilcoxon
 
 class RSSM(nn.Module, RSSMUtils):
     def __init__(
@@ -25,6 +27,7 @@ class RSSM(nn.Module, RSSMUtils):
         self.fc_embed_state_action = self._build_embed_state_action()
         self.fc_prior = self._build_temporal_prior()
         self.fc_posterior = self._build_temporal_posterior()
+        self.max_sigma_ratios = []
     
     def _build_embed_state_action(self):
         """
@@ -105,26 +108,47 @@ class RSSM(nn.Module, RSSMUtils):
         action_entropy = []
         imag_log_probs = []
         action_sigmas = []
-        for t in range(horizon):##*5):
-            """heyo its jim, Im thinking we skip the first step in the uncertainty assessment thing
-            and just start going from round 1. then from there maybe we do like x times the original or smth"""
+        short_horizon = int(horizon/2)
+        long_horizon = int(horizon*2.5)
+        break_flag = False
+
+        for t in range(long_horizon):
+            
             model_state_mu, model_state_sigma = self.get_model_state(rssm_state)
-            """print("\n", t, torch.max(model_state_sigma, dim=-1)[0][:5])
-            if t == 0 or t == 1:
-                print(rssm_state)"""
+
+            if t == short_horizon:
+                last_sigma_mean = torch.mean(model_state_sigma, dim=-1)
+                
+            elif t > short_horizon:
+                sigma_mean = torch.mean(model_state_sigma, dim=-1)
+
+                diffs = last_sigma_mean - sigma_mean
+                places = -int(torch.max(torch.floor(torch.log10(torch.abs(diffs)))).item())
+                
+                diffs = torch.round(diffs, decimals=places).detach().cpu().numpy()
+                if (wilcoxon(diffs, alternative="greater")[1] > 0.99):
+                    break_flag = True
+                if (t > horizon) and break_flag:
+                    break
+                #print("\n", t, wilcoxon(diffs, alternative="greater"))
+                last_sigma_mean = sigma_mean
+
+
             action, action_dist, action_sigma = actor(((model_state_mu).detach(), (model_state_sigma).detach()))
             rssm_state = self.rssm_imagine(action, rssm_state)
-            if t < horizon:
-                next_rssm_states.append(rssm_state)
-                action_entropy.append(action_dist.entropy())
-                imag_log_probs.append(action_dist.log_prob(torch.round(action.detach())))
-                action_sigmas.append(action_sigma)
+            
+            #if t < horizon:
+            next_rssm_states.append(rssm_state)
+            action_entropy.append(action_dist.entropy())
+            imag_log_probs.append(action_dist.log_prob(torch.round(action.detach())))
+            action_sigmas.append(action_sigma)
 
-
+        print("\n", t)
         next_rssm_states = self.rssm_stack_states(next_rssm_states, dim=0)
         action_entropy = torch.stack(action_entropy, dim=0)
         imag_log_probs = torch.stack(imag_log_probs, dim=0)
         action_sigmas = torch.stack(action_sigmas, dim=0)
+        
         return next_rssm_states, imag_log_probs, action_entropy, action_sigmas
 
     def rssm_observe(self, obs_embed_mu, obs_embed_sigma, prev_action, prev_nonterm, prev_rssm_state):

@@ -112,8 +112,6 @@ class RSSMUtils(object):
 
     def get_model_state(self, rssm_state):
         if self.rssm_type == 'discrete':
-            _, stoch_probs_sigma = self.vdp_softmax(rssm_state.logit_mean,
-                                                                 rssm_state.logit_std)
             return torch.cat((rssm_state.deter_mu, 
                             rssm_state.stoch), dim=-1), \
                     torch.cat((rssm_state.deter_sigma, 
@@ -123,7 +121,8 @@ class RSSMUtils(object):
         elif self.rssm_type == 'continuous':
             return torch.cat((rssm_state.deter_mu, rssm_state.stoch), dim=-1),\
                    torch.cat((rssm_state.deter_sigma, rssm_state.std))
-
+        
+        
     def rssm_detach(self, rssm_state):
         if self.rssm_type == 'discrete':
             return RSSMDiscState(

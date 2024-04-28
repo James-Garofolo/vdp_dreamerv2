@@ -136,9 +136,12 @@ class Trainer(object):
             batched_posterior = self.RSSM.rssm_detach(self.RSSM.rssm_seq_to_batch(posterior, self.batch_size, self.seq_len-1))
         
         with FreezeParameters(self.world_list):
-            imag_rssm_states, imag_log_prob, policy_entropy, action_sigmas = self.RSSM.rollout_imagination(self.horizon, self.ActionModel, batched_posterior)
+            imag_rssm_states, imag_log_prob, policy_entropy, action_sigmas = self.RSSM.rollout_imagination(self.horizon, 
+                                                                                                            self.ActionModel, 
+                                                                                                            batched_posterior)
         
         imag_modelstate_mus, imag_modelstate_sigmas = self.RSSM.get_model_state(imag_rssm_states)
+        
         with FreezeParameters(self.world_list+self.value_list+[self.TargetValueModel]+[self.DiscountModel]):
             imag_reward_dist = self.RewardDecoder(imag_modelstate_mus, imag_modelstate_sigmas)
             imag_reward = imag_reward_dist.mean
@@ -206,13 +209,15 @@ class Trainer(object):
             objective = lambda_returns
         else:
             raise NotImplementedError
+        
 
         discount_arr = torch.cat([torch.ones_like(discount_arr[:1]), discount_arr[1:]])
         discount = torch.cumprod(discount_arr[:-1], 0)
         policy_entropy = policy_entropy[1:].unsqueeze(-1)
         actor_vdp_kl = 0.001*sum(gather_kl(self.ActionModel))
         sigma_clamped = torch.log(1+torch.exp(torch.clamp(action_sigmas, 0, 88)))
-        actor_log_det = torch.mean(torch.log(torch.log(torch.sum(sigma_clamped, dim=1))))
+        actor_log_det = torch.mean(torch.log(torch.log(torch.sum(sigma_clamped, dim=-1))))
+        
         actor_loss = -torch.sum(torch.mean(discount * (objective + self.actor_entropy_scale * policy_entropy), dim=1)) +\
               actor_vdp_kl + actor_log_det
         
