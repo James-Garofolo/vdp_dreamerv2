@@ -3,7 +3,6 @@ import torch.nn as nn
 from dreamerv2.utils.rssm_vdp import RSSMUtils, RSSMContState, RSSMDiscState
 import dreamerv2.models.vdp as vdp
 import numpy as np
-from scipy.stats import wilcoxon
 
 class RSSM(nn.Module, RSSMUtils):
     def __init__(
@@ -108,15 +107,12 @@ class RSSM(nn.Module, RSSMUtils):
         action_entropy = []
         imag_log_probs = []
         action_sigmas = []
-        short_horizon = int(horizon/2)
-        long_horizon = int(horizon*2.5)
-        break_flag = False
 
-        for t in range(long_horizon):
+        for t in range(horizon):
             
             model_state_mu, model_state_sigma = self.get_model_state(rssm_state)
 
-            if t == short_horizon:
+            """if t == short_horizon:
                 last_sigma_mean = torch.mean(model_state_sigma, dim=-1)
                 
             elif t > short_horizon:
@@ -131,7 +127,7 @@ class RSSM(nn.Module, RSSMUtils):
                 if (t > horizon) and break_flag:
                     break
                 #print("\n", t, wilcoxon(diffs, alternative="greater"))
-                last_sigma_mean = sigma_mean
+                last_sigma_mean = sigma_mean"""
 
 
             action, action_dist, action_sigma = actor(((model_state_mu).detach(), (model_state_sigma).detach()))
