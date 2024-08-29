@@ -156,4 +156,4 @@ if __name__ == "__main__":
     for exp_scaler in range(30,1,-1):
         avgs = main(args)
         avgs = np.array(avgs)
-        np.savetxt(f"avgs_exp{exp_scaler}.csv", avgs, delimiter=',')
+        np.savetxt(f"training_curves/avgs_exp{exp_scaler}.csv", avgs, delimiter=',')
