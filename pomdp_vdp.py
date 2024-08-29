@@ -18,7 +18,7 @@ pomdp_wrappers = {
     'Freeway-v1':freewayPOMDP,
 }
 
-def main(args):
+def main(args, exp_scaler=20):
     #wandb.login()
     env_name = args.env
     exp_id = args.id + '_pomdp'
@@ -58,8 +58,8 @@ def main(args):
     )
 
     config_dict = config.__dict__
-    trainer = Trainer(config, device)
-    evaluator = Evaluator(config, device)
+    trainer = Trainer(config, device, exp_scaler=exp_scaler)
+    evaluator = Evaluator(config, device, exp_scaler=exp_scaler)
     
     #with wandb.init(project='mastering MinAtar with world models', config=config_dict):
     """training loop"""
@@ -153,6 +153,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=50, help='Batch size')
     parser.add_argument('--seq_len', type=int, default=50, help='Sequence Length (chunk length)')
     args = parser.parse_args()
-    avgs = main(args)
-    avgs = np.array(avgs)
-    np.savetxt("avgs.csv", avgs, delimiter=',')
+    for exp_scaler in range(30,1,-1):
+        avgs = main(args)
+        avgs = np.array(avgs)
+        np.savetxt(f"avgs_exp{exp_scaler}.csv", avgs, delimiter=',')

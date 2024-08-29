@@ -18,6 +18,7 @@ class Trainer(object):
         self, 
         config,
         device,
+        exp_scaler=20
     ):
         self.device = device
         self.config = config
@@ -34,6 +35,7 @@ class Trainer(object):
         self.loss_scale = config.loss_scale
         self.actor_entropy_scale = config.actor_entropy_scale
         self.grad_clip_norm = config.grad_clip
+        self.exp_scaler = exp_scaler
 
         self._model_initialize(config)
         self._optim_initialize(config)
@@ -321,7 +323,8 @@ class Trainer(object):
     
         self.buffer = TransitionBuffer(config.capacity, obs_shape, action_size, config.seq_len, config.batch_size, config.obs_dtype, config.action_dtype)
         self.RSSM = RSSM(action_size, rssm_node_size, embedding_size, self.device, config.rssm_type, config.rssm_info).to(self.device)
-        self.ActionModel = DiscreteActionModel(action_size, deter_size, stoch_size, embedding_size, config.actor, config.expl).to(self.device)
+        self.ActionModel = DiscreteActionModel(action_size, deter_size, stoch_size, embedding_size, 
+                                               config.actor, config.expl, exp_scaler=self.exp_scaler).to(self.device)
         self.RewardDecoder = DenseModel((1,), modelstate_size, config.reward).to(self.device)
         self.ValueModel = DenseModel((1,), modelstate_size, config.critic).to(self.device)
         self.TargetValueModel = DenseModel((1,), modelstate_size, config.critic).to(self.device)

@@ -13,7 +13,8 @@ class DiscreteActionModel(nn.Module):
         stoch_size,
         embedding_size,
         actor_info,
-        expl_info
+        expl_info,
+        exp_scaler=20
     ):
         super().__init__()
         self.explore_buffer = []
@@ -31,6 +32,7 @@ class DiscreteActionModel(nn.Module):
         self.expl_min = expl_info['expl_min']
         self.expl_decay = expl_info['expl_decay']
         self.expl_type = expl_info['expl_type']
+        self.exp_scaler = exp_scaler
         self.model = self._build_model()
 
     def _build_model(self):
@@ -41,7 +43,7 @@ class DiscreteActionModel(nn.Module):
             model += [self.act_fn(tuple_input_flag=True)]
 
         if self.dist == 'one_hot':
-            model += [vdp.Linear(self.node_size, self.action_size, output_flag = True, tuple_input_flag=True)]
+            model += [vdp.Linear(self.node_size, self.action_size, output_flag = True, tuple_input_flag=True, output_scaler=self.exp_scaler)]
         else:
             raise NotImplementedError
         return nn.Sequential(*model) 
