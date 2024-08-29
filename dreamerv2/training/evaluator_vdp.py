@@ -13,10 +13,12 @@ class Evaluator(object):
         self, 
         config,
         device,
+        exp_scaler = 20
     ):
         self.device = device
         self.config = config
         self.action_size = config.action_size
+        self.exp_scaler = exp_scaler
 
     def load_model(self, config, model_path):
         saved_dict = torch.load(model_path)
@@ -41,7 +43,8 @@ class Evaluator(object):
             self.ObsEncoder = DenseModel((embedding_size,), int(np.prod(obs_shape)), config.obs_encoder).to(self.device).eval()
             self.ObsDecoder = DenseModel(obs_shape, modelstate_size, config.obs_decoder).to(self.device).eval()
 
-        self.ActionModel = DiscreteActionModel(action_size, deter_size, stoch_size, embedding_size, config.actor, config.expl).to(self.device).eval()
+        self.ActionModel = DiscreteActionModel(action_size, deter_size, stoch_size, embedding_size, 
+                                               config.actor, config.expl, exp_scaler=self.exp_scaler).to(self.device).eval()
         self.RSSM = RSSM(action_size, rssm_node_size, embedding_size, self.device, config.rssm_type, config.rssm_info).to(self.device).eval()
 
         self.RSSM.load_state_dict(saved_dict["RSSM"])
