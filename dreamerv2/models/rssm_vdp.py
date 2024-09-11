@@ -139,7 +139,7 @@ class RSSM(nn.Module, RSSMUtils):
             imag_log_probs.append(action_dist.log_prob(torch.round(action.detach())))
             action_sigmas.append(action_sigma)
 
-        print("\n", t)
+        #print("\n", t)
         next_rssm_states = self.rssm_stack_states(next_rssm_states, dim=0)
         action_entropy = torch.stack(action_entropy, dim=0)
         imag_log_probs = torch.stack(imag_log_probs, dim=0)

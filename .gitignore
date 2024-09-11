@@ -140,3 +140,4 @@ test.py
 MNIST
 
 *.pth
+._*
