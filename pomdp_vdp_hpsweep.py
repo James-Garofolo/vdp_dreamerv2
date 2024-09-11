@@ -153,6 +153,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=50, help='Batch size')
     parser.add_argument('--seq_len', type=int, default=50, help='Sequence Length (chunk length)')
     args = parser.parse_args()
-    avgs = main(args)
-    avgs = np.array(avgs)
-    np.savetxt(f"training_curves/avgs_exp.csv", avgs, delimiter=',')
+    for exp_scaler in range(30,1,-1):
+        avgs = main(args, exp_scaler=exp_scaler)
+        avgs = np.array(avgs)
+        np.savetxt(f"training_curves/avgs_exp{exp_scaler}.csv", avgs, delimiter=',')
