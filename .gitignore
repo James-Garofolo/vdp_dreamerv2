@@ -140,4 +140,5 @@ test.py
 MNIST
 
 *.pth
+training
 ._*

@@ -71,6 +71,7 @@ def main(args):
     prev_action = torch.zeros(1, trainer.action_size).to(trainer.device)
     episode_actor_ent = []
     scores = []
+    averages = []
     best_mean_score = 0
     train_episodes = 0
     best_save_path = os.path.join(model_dir, 'models_best.pth')
@@ -105,6 +106,7 @@ def main(args):
             if len(scores)>100:
                 scores.pop(0)
                 current_average = np.mean(scores)
+                averages.append(current_average)
                 if current_average>best_mean_score:
                     best_mean_score = current_average 
                     pbar.set_description(f"Best Score: {best_mean_score}")
@@ -125,6 +127,7 @@ def main(args):
 
     '''evaluating probably best model'''
     evaluator.eval_saved_agent(env, best_save_path)
+    return averages
 
 if __name__ == "__main__":
 
@@ -138,3 +141,6 @@ if __name__ == "__main__":
     parser.add_argument('--seq_len', type=int, default=50, help='Sequence Length (chunk length)')
     args = parser.parse_args()
     main(args)
+    avgs = main(args)
+    avgs = np.array(avgs)
+    np.savetxt("avgs.csv", avgs, delimiter=',')
