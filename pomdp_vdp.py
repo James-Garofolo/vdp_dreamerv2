@@ -3,7 +3,7 @@ import os
 import torch
 import numpy as np
 import gymnasium
-from dreamerv2.utils.wrapper import GymMinAtar, OneHotAction, breakoutPOMDP, space_invadersPOMDP, seaquestPOMDP, asterixPOMDP, freewayPOMDP
+from dreamerv2.utils.wrapper import GymMinAtar, OneHotAction, breakoutPOMDP, space_invadersPOMDP, seaquestPOMDP, asterixPOMDP, freewayPOMDP, OneWrapperToRuleThemAll
 from dreamerv2.training.config_vdp import MinAtarConfig
 from dreamerv2.training.trainer_vdp import Trainer
 from dreamerv2.training.evaluator_vdp import Evaluator
@@ -16,6 +16,14 @@ pomdp_wrappers = {
     'Space_invaders-v1':space_invadersPOMDP,
     'Asterix-v1':asterixPOMDP,
     'Freeway-v1':freewayPOMDP,
+}
+
+pomdp_domain = {
+    'Breakout-v1':'MinAtar',
+    'Seaquest-v1':'MinAtar',
+    'Space_invaders-v1':'MinAtar',
+    'Asterix-v1':'MinAtar',
+    'Freeway-v1':'MinAtar',
 }
 
 def main(args, exp_scaler=20):
@@ -37,8 +45,8 @@ def main(args, exp_scaler=20):
         device = torch.device('cpu')
     print('using :', device)  
 
-    PomdpWrapper = pomdp_wrappers[env_name]
-    env = PomdpWrapper(OneHotAction(GymMinAtar(env_name)))
+    PomdpWrapper = pomdp_wrappers.get(env_name, OneWrapperToRuleThemAll)
+    env = PomdpWrapper(OneHotAction(GymMinAtar(env_name, pomdp_domain.get(env_name, 'ALE'))))
     obs_shape = env.observation_space.shape
     action_size = env.action_space.shape[0]
     obs_dtype = bool
