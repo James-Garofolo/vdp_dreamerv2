@@ -3,7 +3,7 @@ import os
 import torch
 import numpy as np
 import gymnasium
-from dreamerv2.utils.wrapper import GymMinAtar, OneHotAction, breakoutPOMDP, space_invadersPOMDP, seaquestPOMDP, asterixPOMDP, freewayPOMDP
+from dreamerv2.utils.wrapper import GymMinAtar, OneHotAction, breakoutPOMDP, breakoutv5POMDP, space_invadersPOMDP, seaquestPOMDP, asterixPOMDP, freewayPOMDP, OneWrapperToRuleThemAll
 from dreamerv2.training.config import MinAtarConfig
 from dreamerv2.training.trainer import Trainer
 from dreamerv2.training.evaluator import Evaluator
@@ -11,10 +11,20 @@ from tqdm import tqdm
 
 pomdp_wrappers = {
     'Breakout-v1':breakoutPOMDP,
+    'Breakout-v5':breakoutv5POMDP,
     'Seaquest-v1':seaquestPOMDP,
     'Space_invaders-v1':space_invadersPOMDP,
     'Asterix-v1':asterixPOMDP,
     'Freeway-v1':freewayPOMDP,
+}
+
+pomdp_domain = {
+    'Breakout-v1':'MinAtar',
+    'Breakout-v5':'ALE',
+    'Seaquest-v1':'MinAtar',
+    'Space_invaders-v1':'MinAtar',
+    'Asterix-v1':'MinAtar',
+    'Freeway-v1':'MinAtar',
 }
 
 def main(args):
@@ -29,15 +39,15 @@ def main(args):
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if torch.cuda.is_available() and args.device:
-        device = torch.device('cuda')
+    if torch.cuda.is_available() and args.device.lower()=='cuda':
+        device = torch.device('cuda:1')
         torch.cuda.manual_seed(args.seed)
     else:
         device = torch.device('cpu')
     print('using :', device)  
 
-    PomdpWrapper = pomdp_wrappers[env_name]
-    env = PomdpWrapper(OneHotAction(GymMinAtar(env_name)))
+    PomdpWrapper = pomdp_wrappers.get(env_name, OneWrapperToRuleThemAll)
+    env = PomdpWrapper(OneHotAction(GymMinAtar(env_name, pomdp_domain.get(env_name, 'ALE'))))
     obs_shape = env.observation_space.shape
     action_size = env.action_space.shape[0]
     obs_dtype = bool

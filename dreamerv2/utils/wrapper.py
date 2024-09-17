@@ -1,14 +1,15 @@
 import minatar
 import gymnasium as gym
 import numpy as np
+import cv2
 
 class GymMinAtar(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, env_name, display_time=50):
+    def __init__(self, env_name, domain, display_time=50):
         self.display_time = display_time
         self.env_name = env_name
-        self.env = gym.make('MinAtar/'+env_name)#minatar.Environment(env_name) 
+        self.env = gym.make(f'{domain}/{env_name}', render_mode="rgb_array")#minatar.Environment(env_name) 
         #self.minimal_actions = minimal_action_set()
         #print("scree", self.env.observation_space.shape)
         h,w,c = self.env.observation_space.shape#state_shape()
@@ -50,10 +51,43 @@ class breakoutPOMDP(gym.ObservationWrapper):
         '''index 2 (trail) is removed, which gives ball's direction'''
         super(breakoutPOMDP, self).__init__(env)
         c,h,w = env.observation_space.shape
+        print(env.observation_space.shape, type(env.observation_space))
         self.observation_space = gym.spaces.MultiBinary((c-1,h,w))
 
     def observation(self, observation):
         return np.stack([observation[:,:,0], observation[:,:,1], observation[:,:,3]], axis=0)
+    
+class breakoutv5POMDP(gym.ObservationWrapper):
+    def __init__(self, env):
+        '''index 2 (trail) is removed, which gives ball's direction'''
+        # env = gym.wrappers.ResizeObservation(env, (10, 10))
+        super(breakoutv5POMDP, self).__init__(env)
+        c,h,w = env.observation_space.shape
+        print(env.observation_space.shape, type(env.observation_space))
+        self.observation_space = gym.spaces.MultiBinary((c,10,10))
+
+    def observation(self, observation):
+        # print(observation.shape)
+        # obs_img = np.transpose(observation, (1, 2, 0))
+        resized_img = cv2.resize(observation, (10,10), interpolation=cv2.INTER_AREA)
+        resized_obs = np.transpose(resized_img, (2, 0, 1))
+        return resized_obs
+        # return np.stack([observation[:,:,0], observation[:,:,1], observation[:,:,2]], axis=0)
+
+class OneWrapperToRuleThemAll(gym.ObservationWrapper):
+    def __init__(self, env):
+        '''index 2 (trail) is removed, which gives ball's direction'''
+        super(OneWrapperToRuleThemAll, self).__init__(env)
+        print(env.observation_space.shape, type(env.observation_space))
+        self.observation_space = gym.spaces.MultiBinary((3,10,10))
+
+    def observation(self, observation):
+        # print(observation.shape)
+        # obs_img = np.transpose(observation, (1, 2, 0))
+        resized_img = cv2.resize(observation, (10,10), interpolation=cv2.INTER_AREA)
+        resized_obs = np.transpose(resized_img, (2, 0, 1))
+        return resized_obs
+        # return np.stack([observation[:,:,0], observation[:,:,1], observation[:,:,2]], axis=0)
     
 class asterixPOMDP(gym.ObservationWrapper):
     '''index 2 (trail) is removed, which gives ball's direction'''
