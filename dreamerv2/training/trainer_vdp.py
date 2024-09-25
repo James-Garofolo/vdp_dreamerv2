@@ -18,7 +18,7 @@ class Trainer(object):
         self, 
         config,
         device,
-        exp_scaler=20
+        exp_scaler=1
     ):
         self.device = device
         self.config = config
@@ -221,7 +221,7 @@ class Trainer(object):
         actor_log_det = torch.mean(torch.log(torch.log(torch.sum(sigma_clamped, dim=-1))))
         
         actor_loss = -torch.sum(torch.mean(discount * (objective + self.actor_entropy_scale * policy_entropy), dim=1)) +\
-              actor_vdp_kl + actor_log_det
+              actor_vdp_kl + self.exp_scaler*actor_log_det
         
         return actor_loss, discount, lambda_returns
 
@@ -245,9 +245,9 @@ class Trainer(object):
         prior_dist = self.RSSM.get_dist(prior)
         post_dist = self.RSSM.get_dist(posterior)
         prior_sigma_clamped = torch.log(1+torch.exp(torch.clamp(prior.logit_std, 0, 88)))
-        prior_log_det = torch.mean(torch.log(torch.log(torch.sum(prior_sigma_clamped, dim=1))))
+        prior_log_det = self.exp_scaler*self.exp_scaler*torch.mean(torch.log(torch.log(torch.sum(prior_sigma_clamped, dim=1))))
         post_sigma_clamped = torch.log(1+torch.exp(torch.clamp(posterior.logit_std, 0, 88)))
-        post_log_det = torch.mean(torch.log(torch.log(torch.sum(post_sigma_clamped, dim=1))))
+        post_log_det = self.exp_scaler*self.exp_scaler*torch.mean(torch.log(torch.log(torch.sum(post_sigma_clamped, dim=1))))
 
         if self.kl_info['use_kl_balance']:
             alpha = self.kl_info['kl_balance_scale']
@@ -324,7 +324,7 @@ class Trainer(object):
         self.buffer = TransitionBuffer(config.capacity, obs_shape, action_size, config.seq_len, config.batch_size, config.obs_dtype, config.action_dtype)
         self.RSSM = RSSM(action_size, rssm_node_size, embedding_size, self.device, config.rssm_type, config.rssm_info).to(self.device)
         self.ActionModel = DiscreteActionModel(action_size, deter_size, stoch_size, embedding_size, 
-                                               config.actor, config.expl, exp_scaler=self.exp_scaler).to(self.device)
+                                               config.actor, config.expl).to(self.device)
         self.RewardDecoder = DenseModel((1,), modelstate_size, config.reward).to(self.device)
         self.ValueModel = DenseModel((1,), modelstate_size, config.critic).to(self.device)
         self.TargetValueModel = DenseModel((1,), modelstate_size, config.critic).to(self.device)

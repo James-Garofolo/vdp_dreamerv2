@@ -13,8 +13,7 @@ class DiscreteActionModel(nn.Module):
         stoch_size,
         embedding_size,
         actor_info,
-        expl_info,
-        exp_scaler=20
+        expl_info
     ):
         super().__init__()
         self.explore_buffer = []
@@ -32,7 +31,6 @@ class DiscreteActionModel(nn.Module):
         self.expl_min = expl_info['expl_min']
         self.expl_decay = expl_info['expl_decay']
         self.expl_type = expl_info['expl_type']
-        self.exp_scaler = exp_scaler
         self.model = self._build_model()
 
     def _build_model(self):
