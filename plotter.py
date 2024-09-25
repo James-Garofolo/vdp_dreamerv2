@@ -11,7 +11,11 @@ files = os.listdir(r"training_curves")
 maxes = []
 scalers = []
 shortest = []
+"""for f in files:
+    a = np.loadtxt("training_curves/" + f, delimiter=",")
+    plt.plot(a, label=f.replace(".csv", "")[8:])"""
 
+    
 for f in files:
     a = np.loadtxt("training_curves/" + f, delimiter=",")
     maxes.append(a.max())

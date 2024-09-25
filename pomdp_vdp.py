@@ -18,7 +18,7 @@ pomdp_wrappers = {
     'Freeway-v1':freewayPOMDP,
 }
 
-def main(args, exp_scaler=20):
+def main(args, exp_scaler=12):
     #wandb.login()
     env_name = args.env
     exp_id = args.id + '_pomdp'
