@@ -41,7 +41,7 @@ class DiscreteActionModel(nn.Module):
             model += [self.act_fn(tuple_input_flag=True)]
 
         if self.dist == 'one_hot':
-            model += [vdp.Linear(self.node_size, self.action_size, output_flag = True, tuple_input_flag=True, output_scaler=self.exp_scaler)]
+            model += [vdp.Linear(self.node_size, self.action_size, output_flag = True, tuple_input_flag=True)]
         else:
             raise NotImplementedError
         return nn.Sequential(*model) 

@@ -24,7 +24,7 @@ class Identity(torch.nn.Module):
 
 class Linear(torch.nn.Module):
     def __init__(self, in_features, out_features, bias=True, input_flag=False, 
-                 output_flag=False, tuple_input_flag=False, output_scaler=20):
+                 output_flag=False, tuple_input_flag=False):
         super(Linear, self).__init__()
         self.input_flag = input_flag
         self.tuple_input_flag = tuple_input_flag
@@ -32,7 +32,6 @@ class Linear(torch.nn.Module):
         self.mu = torch.nn.Linear(in_features, out_features, bias)
         self.sigma = torch.nn.Linear(in_features, out_features, bias)
         self.output_flag = output_flag
-        self.output_scaler = output_scaler
         if output_flag:
             torch.nn.init.zeros_(self.mu.weight)
             torch.nn.init.ones_(self.sigma.weight)
@@ -69,7 +68,7 @@ class Linear(torch.nn.Module):
             sigma_y += softplus(self.sigma.bias)
 
         if self.output_flag:
-            sigma_y *= self.output_scaler * 1e-3
+            sigma_y *= 1e-2
         else:
             sigma_y *= 1e-3
 

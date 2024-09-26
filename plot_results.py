@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-baseline = np.loadtxt("avgs_baseline.csv")
-exp = np.loadtxt("avgs_exp.csv")
+baseline = np.loadtxt("avgs.csv")
+exp = np.loadtxt("training_curves/avgs_exp.csv")
 t = np.arange(exp.shape[0])
 idx = exp.shape[0]-baseline.shape[0]
 

@@ -22,7 +22,7 @@ class MinAtarConfig():
     action_dtype: np.dtype = np.float32
 
     #training desc
-    train_steps: int = int(1e6)
+    train_steps: int = int(1e5)#6)
     train_every: int = 50                                  #reduce this to potentially improve sample requirements
     collect_intervals: int = 5 
     batch_size: int = 50 
